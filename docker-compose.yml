@@ -1,0 +1,191 @@
+version: "3"
+
+services:
+  namenode:
+    image: wcastor/dna-2022-hadoop-base-namenode:1.0
+    container_name: namenode
+    restart: always
+    ports:
+      - 9870:9870
+      - 8020:8020
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+      - ./shared_folder:/opt/workspace
+    environment:
+      - CLUSTER_NAME=testero
+    env_file:
+      - ./hadoop.env
+
+  datanode:
+    image: wcastor/dna-2022-hadoop-base-datanode:1.0
+    container_name: datanode
+    restart: always
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+    env_file:
+      - ./hadoop.env
+  
+  resourcemanager:
+    image: wcastor/dna-2022-hadoop-base-resourcemanager:1.0
+    container_name: resourcemanager
+    restart: always
+    ports:
+      - 8088:8088
+    environment:
+      SERVICE_PRECONDITION: "namenode:8020 namenode:9870 datanode:9864"
+    env_file:
+      - ./hadoop.env
+
+  nodemanager:
+    image: wcastor/dna-2022-hadoop-base-nodemanager:1.0
+    container_name: nodemanager
+    restart: always
+    environment:
+      SERVICE_PRECONDITION: "namenode:8020 namenode:9870 datanode:9864 resourcemanager:8088"
+    env_file:
+      - ./hadoop.env
+  
+  historyserver:
+    image: wcastor/dna-2022-hadoop-base-historyserver:1.0
+    container_name: historyserver
+    restart: always
+    environment:
+      SERVICE_PRECONDITION: "namenode:8020 namenode:9870 datanode:9864 resourcemanager:8088"
+    volumes:
+      - hadoop_historyserver:/hadoop/yarn/timeline
+    env_file:
+      - ./hadoop.env
+  
+  spark-master:
+    image: wcastor/dna-2022-spark-master:3.2.1
+    container_name: spark-master
+    ports:
+      - 8080:8080
+      - 7077:7077
+    volumes:
+      - shared-workspace:/opt/workspace
+      - ./shared_folder:/opt/workspace
+    env_file:
+      - ./hadoop.env
+
+  spark-worker-1:
+    image: wcastor/dna-2022-spark-worker:3.2.1
+    container_name: spark-worker-1
+    environment:
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_MEMORY=512m
+    ports:
+      - 8081:8081
+    depends_on:
+      - spark-master
+    volumes:
+      - shared-workspace:/opt/workspace
+      - ./shared_folder:/opt/workspace
+    env_file:
+      - ./hadoop.env
+
+  spark-worker-2:
+    image: wcastor/dna-2022-spark-worker:3.2.1
+    container_name: spark-worker-2
+    environment:
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_MEMORY=512m
+    ports:
+      - 8082:8081
+    depends_on:
+      - spark-master
+    volumes:
+      - shared-workspace:/opt/workspace
+      - ./shared_folder:/opt/workspace
+    env_file:
+      - ./hadoop.env
+    
+  jupyterlab:
+    image: wcastor/dna-2022-spark-jupyterlab:3.2.9-spark-3.2.1
+    container_name: jupyterlab
+    ports:
+      - 7777:8888
+      - 4040:4040
+    volumes:
+      - shared-workspace:/opt/workspace
+      - ./shared_folder:/opt/workspace
+    env_file:
+      - ./hadoop.env
+
+  hive-metastore-postgresql:
+    image: wcastor/dna-2022-hive-metastore:3.1.0
+    container_name: hive-metastore-postgresql
+    env_file:
+      - ./hadoop.env
+    environment:
+      - POSTGRES_PASSWORD=hive
+      - POSTGRES_USER=hive
+      - POSTGRES_DB=metastore
+    ports:
+      - "5432:5432"
+
+  hive-server:
+    image: wcastor/dna-2022-hive:3.1.0
+    container_name: hive-server
+    env_file:
+      - ./hadoop.env
+    volumes:
+      - ./shared_folder:/opt/workspace
+    environment:
+      HIVE_SITE_CONF_hive_metastore_uris: thrift://hive-metastore:9083
+      SERVICE_PRECONDITION: "hive-metastore:9083"
+    ports:
+      - "10000:10000"
+
+  hive-metastore:
+    image: wcastor/dna-2022-hive:3.1.0
+    container_name: hive-metastore
+    command: /opt/hive/bin/hive --service metastore
+    env_file:
+      - ./hadoop.env
+    volumes:
+      - ./shared_folder:/opt/workspace
+    environment:
+      SERVICE_PRECONDITION: "namenode:8020 namenode:9870 datanode:9864 hive-metastore-postgresql:5432 resourcemanager:8088"
+    ports:
+      - "9083:9083"
+    links:
+      - "hive-metastore-postgresql:postgres"
+
+  huedb:
+    image: postgres:12.10
+    container_name: huedb
+    volumes:
+      - pg_data:/var/lib/postgresl/data/
+    ports:
+      - "5432"
+    env_file:
+      - ./hadoop-hive.env
+    environment:
+        POSTGRES_PASSWORD: hue
+        POSTGRES_USER: hue
+        POSTGRES_DB: hue
+        SERVICE_PRECONDITION: "namenode:9870 datanode:9864 hive-metastore-postgresql:5432 resourcemanager:8088 hive-metastore:9083"
+  
+  hue:
+    image: gethue/hue:4.8.0
+    container_name: hue
+    environment:
+        SERVICE_PRECONDITION: "namenode:9870 datanode:9864 hive-metastore-postgresql:5432 resourcemanager:8088 hive-metastore:9083 huedb:5000"
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./hue-overrides.ini:/usr/share/hue/desktop/conf/hue-overrides.ini
+    links:
+      - huedb
+  
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
+  pg_data:
+  hadoop_historyserver:
+  shared-workspace:
+    name: "hadoop-distributed-file-system"
+    driver: local

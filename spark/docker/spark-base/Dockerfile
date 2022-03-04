@@ -1,0 +1,10 @@
+FROM wcastor/dna-2022-os-base:latest
+
+ENV SPARK_HOME /spark
+ENV SPARK_MASTER_HOST spark-master
+ENV SPARK_MASTER_PORT 7077
+ENV PYSPARK_PYTHON python3
+
+# -- Runtime
+
+WORKDIR ${SPARK_HOME}
