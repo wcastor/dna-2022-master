@@ -1,4 +1,4 @@
-FROM base_image:1
+FROM wcastor/dna-2022-hadoop-base:1.0
 
 HEALTHCHECK CMD curl -f http://localhost:8188/ || exit 1
 
